@@ -9,11 +9,11 @@ services:
       APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
       WB_REQUEST_INTERVAL_SECONDS: ${WB_REQUEST_INTERVAL_SECONDS:-20.2}
       WB_HTTP_TIMEOUT_SECONDS: ${WB_HTTP_TIMEOUT_SECONDS:-30}
+      SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}
     volumes:
       - wb_ads_data:/data
     ports:
-      - "127.0.0.1:43817:8000"
+      - "${APP_BIND_HOST:-0.0.0.0}:${APP_PORT:-43817}:8000"
 
 volumes:
   wb_ads_data:
-

@@ -33,23 +33,51 @@ https://dev.wildberries.ru/openapi/promotion
 
 ## Запуск в Docker
 
-```powershell
-Copy-Item .env.example .env
+```bash
+cp .env.example .env
 docker compose up -d --build
 ```
 
 Откройте:
 
 ```text
-http://127.0.0.1:43817
+http://IP_СЕРВЕРА:43817/register
 ```
 
-Порт `43817` намеренно нестандартный и опубликован только на локальном
-интерфейсе `127.0.0.1`.
+Порт `43817` намеренно нестандартный. По умолчанию Docker публикует его на всех
+интерфейсах (`0.0.0.0`). Адрес и порт настраиваются в `.env`:
+
+```dotenv
+APP_BIND_HOST=0.0.0.0
+APP_PORT=43817
+```
+
+Проверка на Linux-сервере:
+
+```bash
+docker compose ps
+curl http://127.0.0.1:43817/healthz
+ss -lntp | grep 43817
+```
+
+В `docker compose ps` должен отображаться проброс
+`0.0.0.0:43817->8000/tcp`. Если локальный `curl` работает, но соединение по IP
+не устанавливается, откройте TCP-порт в firewall сервера и в сетевых правилах
+хостинга. Например, для активного UFW:
+
+```bash
+sudo ufw allow 43817/tcp
+sudo ufw status
+```
+
+Для публичного сервера рекомендуется закрыть прямой доступ к порту, поставить
+перед приложением HTTPS reverse proxy (Nginx, Caddy или Traefik), установить
+`APP_BIND_HOST=127.0.0.1` и `SESSION_HTTPS_ONLY=true`. Без HTTPS логин, пароль и
+API-ключ передаются по сети без транспортного шифрования.
 
 Остановка:
 
-```powershell
+```bash
 docker compose down
 ```
 
