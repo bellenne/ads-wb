@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.main import create_app
 from app.models import (
     Account,
+    Campaign,
     DailyStat,
     Product,
     SchedulerSetting,
@@ -200,6 +201,121 @@ def test_manual_ui_flow_persists_filters_groups_and_exports(
             account = session.scalar(select(Account))
             assert account.name == "Кабинет после переименования"
             assert account.encrypted_token == encrypted_before
+
+
+def test_analytics_report_has_categories_kpis_and_filtered_rankings(
+    settings,
+    fake_client_factory,
+):
+    app = create_app(settings, fake_client_factory)
+    target_date = date(2026, 7, 27)
+
+    with TestClient(app) as client:
+        register_user(client)
+        client.post(
+            "/cabinet",
+            data={
+                "name": "Аналитический кабинет",
+                "token": "valid-token-123456",
+            },
+        )
+        client.post(
+            "/scheduler/run",
+            data={
+                "date_from": target_date.isoformat(),
+                "date_to": target_date.isoformat(),
+            },
+        )
+        with app.state.session_factory() as session:
+            account = session.scalar(select(Account))
+            session.add_all(
+                [
+                    Campaign(
+                        account_id=account.id,
+                        advert_id=28000002,
+                        name="Футболки · поиск",
+                    ),
+                    Product(
+                        account_id=account.id,
+                        nm_id=700000002,
+                        name="Футболка Север",
+                        subject_name="футболки",
+                        report_group="Футболки",
+                    ),
+                    DailyStat(
+                        account_id=account.id,
+                        advert_id=28000002,
+                        nm_id=700000002,
+                        stat_date=target_date,
+                        views=200,
+                        clicks=20,
+                        spend=100,
+                        atbs=5,
+                        orders=2,
+                        canceled=0,
+                        shks=2,
+                        revenue=1000,
+                    ),
+                    DailyStat(
+                        account_id=account.id,
+                        advert_id=28000002,
+                        nm_id=700000002,
+                        stat_date=date(2026, 7, 26),
+                        views=100,
+                        clicks=10,
+                        spend=50,
+                        atbs=2,
+                        orders=1,
+                        canceled=0,
+                        shks=1,
+                        revenue=500,
+                    ),
+                ]
+            )
+            session.commit()
+
+        response = client.get(
+            "/",
+            params={
+                "date_from": target_date.isoformat(),
+                "date_to": target_date.isoformat(),
+            },
+        )
+        assert response.status_code == 200
+        assert "Полный отчёт по РК" in response.text
+        assert "Показатели из Excel" in response.text
+        assert "Категории WB" in response.text
+        assert "Фотообои" in response.text
+        assert "Футболки" in response.text
+        assert "Футболки · поиск" in response.text
+        assert "Конв. корзины" in response.text
+        assert "700000002" in response.text
+
+        response = client.get(
+            "/",
+            params={
+                "date_from": target_date.isoformat(),
+                "date_to": target_date.isoformat(),
+                "subject": "Футболки",
+            },
+        )
+        assert response.status_code == 200
+        assert "Футболка Север" in response.text
+        assert "Фотообои Горы" not in response.text
+        assert "1 000 ₽" in response.text
+        assert "100 ₽" in response.text
+        assert "↑ 100.0%" in response.text
+
+        response = client.get(
+            "/",
+            params={
+                "date_from": "2026-07-28",
+                "date_to": "2026-07-27",
+            },
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Дата начала не может быть позже даты окончания" in response.text
 
 
 def test_failed_manual_run_is_recorded_without_exposing_token(settings):

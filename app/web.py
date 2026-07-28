@@ -21,6 +21,10 @@ from app.models import (
     User,
     utcnow,
 )
+from app.services.analytics import (
+    available_dimensions,
+    build_analytics_report,
+)
 from app.services.auth import AuthManager
 from app.services.token_vault import TokenVault
 
@@ -197,7 +201,13 @@ def logout(request: Request):
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
+def dashboard(
+    request: Request,
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    group: str = Query(""),
+    subject: str = Query(""),
+):
     session_factory = request.app.state.session_factory
     with session_factory() as session:
         account = _owned_account(session, _current_user_id(request))
@@ -211,48 +221,23 @@ def dashboard(request: Request):
             "last_run": None,
             "date_min": None,
             "date_max": None,
-            "trend": [],
+            "report": None,
+            "groups": [],
+            "subjects": [],
+            "filters": {
+                "date_from": date_from,
+                "date_to": date_to,
+                "group": group,
+                "subject": subject,
+            },
         }
         if account:
-            sums = session.execute(
+            date_min, date_max = session.execute(
                 select(
-                    func.coalesce(func.sum(DailyStat.views), 0),
-                    func.coalesce(func.sum(DailyStat.clicks), 0),
-                    func.coalesce(func.sum(DailyStat.spend), 0),
-                    func.coalesce(func.sum(DailyStat.atbs), 0),
-                    func.coalesce(func.sum(DailyStat.orders), 0),
-                    func.coalesce(func.sum(DailyStat.revenue), 0),
-                    func.count(func.distinct(DailyStat.nm_id)),
-                    func.count(func.distinct(DailyStat.advert_id)),
                     func.min(DailyStat.stat_date),
                     func.max(DailyStat.stat_date),
                 ).where(DailyStat.account_id == account.id)
             ).one()
-            (
-                views,
-                clicks,
-                spend,
-                atbs,
-                orders,
-                revenue,
-                products_count,
-                campaigns_count,
-                date_min,
-                date_max,
-            ) = sums
-            context["totals"] = {
-                "views": int(views),
-                "clicks": int(clicks),
-                "spend": float(spend),
-                "atbs": int(atbs),
-                "orders": int(orders),
-                "revenue": float(revenue),
-                "products_count": int(products_count),
-                "campaigns_count": int(campaigns_count),
-                "ctr": _safe_percent(clicks, views),
-                "cpc": float(spend) / int(clicks) if clicks else 0,
-                "drr": _safe_percent(spend, revenue),
-            }
             context["date_min"] = date_min
             context["date_max"] = date_max
             context["last_run"] = session.scalar(
@@ -261,36 +246,38 @@ def dashboard(request: Request):
                 .order_by(SyncRun.started_at.desc())
                 .limit(1)
             )
-
-            trend_rows = session.execute(
-                select(
-                    DailyStat.stat_date,
-                    func.sum(DailyStat.spend),
-                    func.sum(DailyStat.revenue),
-                )
-                .where(DailyStat.account_id == account.id)
-                .group_by(DailyStat.stat_date)
-                .order_by(DailyStat.stat_date.desc())
-                .limit(14)
-            ).all()
-            trend_rows = list(reversed(trend_rows))
-            max_value = max(
-                [
-                    max(float(row[1] or 0), float(row[2] or 0))
-                    for row in trend_rows
-                ]
-                or [1]
+            context["groups"], context["subjects"] = available_dimensions(
+                session,
+                account.id,
             )
-            context["trend"] = [
-                {
-                    "date": row[0],
-                    "spend": float(row[1] or 0),
-                    "revenue": float(row[2] or 0),
-                    "spend_height": 100 * float(row[1] or 0) / max_value,
-                    "revenue_height": 100 * float(row[2] or 0) / max_value,
+            if date_min and date_max:
+                default_from = max(date_min, date_max - timedelta(days=29))
+                begin = date_from or default_from
+                end = date_to or date_max
+                if begin > end:
+                    return _redirect(
+                        "/",
+                        "Дата начала не может быть позже даты окончания",
+                        "error",
+                    )
+                report = build_analytics_report(
+                    session,
+                    account.id,
+                    begin,
+                    end,
+                    group=group,
+                    subject=subject,
+                )
+                context["report"] = report
+                context["totals"] = report["totals"]
+                context["filters"]["date_from"] = begin
+                context["filters"]["date_to"] = end
+                context["quick_ranges"] = {
+                    "week": max(date_min, date_max - timedelta(days=6)),
+                    "month": default_from,
+                    "all": date_min,
+                    "end": date_max,
                 }
-                for row in trend_rows
-            ]
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
