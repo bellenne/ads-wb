@@ -190,24 +190,59 @@
           </div>
         </article>
 
-        <article class="card analytics-card funnel-card">
+        <article class="card analytics-card funnel-card" data-funnel-card>
           <span class="eyebrow">Воронка</span>
-          <h2>Путь до заказа</h2>
+          <div class="funnel-title-row">
+            <h2>Путь до заказа</h2>
+            <span class="pill" data-funnel-current>Все категории</span>
+          </div>
+          <div class="funnel-category-tabs" role="tablist" aria-label="Категория воронки">
+            <button
+              class="funnel-category-tab active"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              data-funnel-label="Все категории"
+              data-funnel-views="{{ totals.views }}"
+              data-funnel-clicks="{{ totals.clicks }}"
+              data-funnel-atbs="{{ totals.atbs }}"
+              data-funnel-orders="{{ totals.orders }}"
+              data-funnel-ctr="{{ totals.ctr }}"
+              data-funnel-cart-cr="{{ totals.cart_cr }}"
+              data-funnel-order-cr="{{ totals.order_cr }}"
+            >Все</button>
+            {% for category in report.funnel_categories %}
+              <button
+                class="funnel-category-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-funnel-label="{{ category.label }}"
+                data-funnel-views="{{ category.views }}"
+                data-funnel-clicks="{{ category.clicks }}"
+                data-funnel-atbs="{{ category.atbs }}"
+                data-funnel-orders="{{ category.orders }}"
+                data-funnel-ctr="{{ category.ctr }}"
+                data-funnel-cart-cr="{{ category.cart_cr }}"
+                data-funnel-order-cr="{{ category.order_cr }}"
+              >{{ category.label }}</button>
+            {% endfor %}
+          </div>
           <div class="funnel">
             <div class="funnel-step" style="--funnel-width: 100%">
-              <span>Показы</span><strong>{{ number(totals.views) }}</strong>
+              <span>Показы</span><strong data-funnel-value="views">{{ number(totals.views) }}</strong>
             </div>
-            <div class="funnel-conversion">CTR {{ "%.2f"|format(totals.ctr * 100) }}%</div>
+            <div class="funnel-conversion">CTR <span data-funnel-rate="ctr">{{ "%.2f"|format(totals.ctr * 100) }}%</span></div>
             <div class="funnel-step" style="--funnel-width: 82%">
-              <span>Клики</span><strong>{{ number(totals.clicks) }}</strong>
+              <span>Клики</span><strong data-funnel-value="clicks">{{ number(totals.clicks) }}</strong>
             </div>
-            <div class="funnel-conversion">В корзину {{ "%.2f"|format(totals.cart_cr * 100) }}%</div>
+            <div class="funnel-conversion">В корзину <span data-funnel-rate="cartCr">{{ "%.2f"|format(totals.cart_cr * 100) }}%</span></div>
             <div class="funnel-step" style="--funnel-width: 64%">
-              <span>Корзины</span><strong>{{ number(totals.atbs) }}</strong>
+              <span>Корзины</span><strong data-funnel-value="atbs">{{ number(totals.atbs) }}</strong>
             </div>
-            <div class="funnel-conversion">В заказ {{ "%.2f"|format(totals.order_cr * 100) }}%</div>
+            <div class="funnel-conversion">В заказ <span data-funnel-rate="orderCr">{{ "%.2f"|format(totals.order_cr * 100) }}%</span></div>
             <div class="funnel-step funnel-final" style="--funnel-width: 46%">
-              <span>Заказы</span><strong>{{ number(totals.orders) }}</strong>
+              <span>Заказы</span><strong data-funnel-value="orders">{{ number(totals.orders) }}</strong>
             </div>
           </div>
         </article>

@@ -442,6 +442,7 @@ def build_analytics_report(
         "chart": _build_line_chart(daily),
         "groups": group_rows,
         "subjects": subject_rows[:10],
+        "funnel_categories": subject_rows,
         "products": product_rows[:12],
         "campaigns": campaign_rows[:10],
         "donut_background": _donut_background(group_rows),

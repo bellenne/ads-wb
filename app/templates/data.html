@@ -40,6 +40,64 @@
       </form>
     </section>
 
+    <section class="comments-workspace">
+      <article class="card comment-create-card">
+        <div class="card-header">
+          <div>
+            <span class="eyebrow">Заметка по товару</span>
+            <h2>Добавить по артикулу</h2>
+          </div>
+          <span class="comment-mark">✎</span>
+        </div>
+        <form method="post" action="/comments" class="comment-create-form">
+          <input type="hidden" name="return_to" value="{{ current_page_url }}">
+          <label>
+            <span>Артикул WB</span>
+            <input type="number" name="nm_id" min="1" step="1" inputmode="numeric" placeholder="Например, 699712395" required>
+          </label>
+          <label>
+            <span>Комментарий</span>
+            <textarea name="comment" maxlength="4000" rows="3" placeholder="Что проверить, изменить или учесть…" required></textarea>
+          </label>
+          <button class="button button-primary" type="submit">Сохранить комментарий</button>
+        </form>
+      </article>
+
+      <details class="card comments-library" {{ 'open' if comments else '' }}>
+        <summary>
+          <span>
+            <span class="eyebrow">Все заметки</span>
+            <strong>Комментарии к артикулам</strong>
+          </span>
+          <span class="pill">{{ comments|length }}</span>
+        </summary>
+        {% if comments %}
+          <div class="comments-list">
+            {% for item in comments %}
+              <form method="post" action="/comments" class="saved-comment">
+                <input type="hidden" name="nm_id" value="{{ item.nm_id }}">
+                <input type="hidden" name="return_to" value="{{ current_page_url }}">
+                <div class="saved-comment-title">
+                  <div>
+                    <strong>{{ item.product_name or 'Артикул ' ~ item.nm_id }}</strong>
+                    <small>{{ item.nm_id }} · изменён {{ item.updated_at.strftime('%d.%m.%Y в %H:%M') }}</small>
+                  </div>
+                  <a href="/data?query={{ item.nm_id }}">Найти в данных</a>
+                </div>
+                <textarea name="comment" maxlength="4000" rows="3" aria-label="Комментарий к артикулу {{ item.nm_id }}">{{ item.comment }}</textarea>
+                <div class="saved-comment-actions">
+                  <small>Чтобы удалить комментарий, очистите текст и сохраните.</small>
+                  <button type="submit">Сохранить изменения</button>
+                </div>
+              </form>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="comments-empty">Сохранённых комментариев пока нет.</div>
+        {% endif %}
+      </details>
+    </section>
+
     <section class="card data-card">
       <div class="card-header">
         <div><span class="eyebrow">Результат</span><h2>{{ total }} строк</h2></div>
@@ -52,7 +110,7 @@
               <tr>
                 <th>Дата</th><th>Группа / товар</th><th>Кампания</th><th>Показы</th>
                 <th>Клики</th><th>CTR</th><th>CPC</th><th>Затраты</th>
-                <th>Корзина</th><th>Заказы</th><th>Сумма заказов</th><th>ДРРЗ</th>
+                <th>Корзина</th><th>Заказы</th><th>Сумма заказов</th><th>ДРРЗ</th><th>Комментарий</th>
               </tr>
             </thead>
             <tbody>
@@ -73,19 +131,38 @@
                   <td class="numeric">{{ row.orders }}</td>
                   <td class="numeric">{{ "{:,.2f}".format(row.revenue).replace(',', ' ') }} ₽</td>
                   <td class="numeric">{{ "%.2f"|format(row.drr * 100) }}%</td>
+                  <td class="comment-cell">
+                    <details class="inline-comment">
+                      <summary>{{ row.comment.comment|truncate(38) if row.comment else 'Добавить' }}</summary>
+                      <form method="post" action="/comments">
+                        <input type="hidden" name="nm_id" value="{{ row.nm_id }}">
+                        <input type="hidden" name="return_to" value="{{ current_page_url }}">
+                        <textarea name="comment" maxlength="4000" rows="3" aria-label="Комментарий к артикулу {{ row.nm_id }}" placeholder="Комментарий к артикулу…">{{ row.comment.comment if row.comment else '' }}</textarea>
+                        <button type="submit">Сохранить</button>
+                      </form>
+                    </details>
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
         {% if pages > 1 %}
-          <nav class="pagination">
-            {% if page > 1 %}
-              <a href="/data?page={{ page - 1 }}&date_from={{ filters.date_from or '' }}&date_to={{ filters.date_to or '' }}&group={{ filters.group }}&query={{ filters.query }}">← Назад</a>
+          <nav class="pagination" aria-label="Страницы данных">
+            {% if pagination.previous %}
+              <a class="pagination-direction" href="{{ pagination.previous }}">← Назад</a>
             {% endif %}
-            <span>{{ page }} / {{ pages }}</span>
-            {% if page < pages %}
-              <a href="/data?page={{ page + 1 }}&date_from={{ filters.date_from or '' }}&date_to={{ filters.date_to or '' }}&group={{ filters.group }}&query={{ filters.query }}">Вперёд →</a>
+            <span class="pagination-pages">
+              {% for item in pagination["items"] %}
+                {% if item.current %}
+                  <strong aria-current="page">{{ item.number }}</strong>
+                {% else %}
+                  <a href="{{ item.url }}">{{ item.number }}</a>
+                {% endif %}
+              {% endfor %}
+            </span>
+            {% if pagination.next %}
+              <a class="pagination-direction" href="{{ pagination.next }}">Вперёд →</a>
             {% endif %}
           </nav>
         {% endif %}
@@ -114,4 +191,3 @@
     {% endif %}
   {% endif %}
 {% endblock %}
-

@@ -141,6 +141,39 @@ class Product(Base):
     )
 
 
+class ProductComment(Base):
+    __tablename__ = "product_comments"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "nm_id",
+            name="uq_product_comment_account_nm",
+        ),
+        Index(
+            "ix_product_comments_account_updated",
+            "account_id",
+            "updated_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        index=True,
+    )
+    nm_id: Mapped[int] = mapped_column(BigInteger)
+    comment: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
 class DailyStat(Base):
     __tablename__ = "daily_stats"
     __table_args__ = (

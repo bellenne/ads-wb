@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
@@ -16,6 +16,7 @@ from app.models import (
     Campaign,
     DailyStat,
     Product,
+    ProductComment,
     SchedulerSetting,
     SyncRun,
     User,
@@ -59,6 +60,32 @@ def _safe_next(value: str | None) -> str:
     if not value or not value.startswith("/") or value.startswith("//"):
         return "/"
     return value
+
+
+def _data_page_url(
+    page: int,
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    group: str,
+    query: str,
+) -> str:
+    parameters: dict[str, str | int] = {"page": page}
+    if date_from:
+        parameters["date_from"] = date_from.isoformat()
+    if date_to:
+        parameters["date_to"] = date_to.isoformat()
+    if group:
+        parameters["group"] = group
+    if query:
+        parameters["query"] = query
+    return f"/data?{urlencode(parameters)}"
+
+
+def _safe_data_return(value: str) -> str:
+    if value == "/data" or value.startswith("/data?"):
+        return value
+    return "/data"
 
 
 @router.get("/healthz")
@@ -534,9 +561,12 @@ def data_page(
                     "account": None,
                     "rows": [],
                     "products": [],
+                    "comments": [],
                     "groups": [],
                     "page": 1,
                     "pages": 0,
+                    "pagination": {},
+                    "current_page_url": "/data",
                     "filters": {},
                     "message": request.query_params.get("message"),
                     "kind": request.query_params.get("kind", "success"),
@@ -593,6 +623,81 @@ def data_page(
         total = int(session.scalar(count_statement) or 0)
         pages = (total + page_size - 1) // page_size
         page = min(page, max(pages, 1))
+        current_page_url = _data_page_url(
+            page,
+            date_from=date_from,
+            date_to=date_to,
+            group=group,
+            query=query,
+        )
+        if pages:
+            first_page = max(1, page - 2)
+            last_page = min(pages, first_page + 4)
+            first_page = max(1, last_page - 4)
+            pagination = {
+                "previous": (
+                    _data_page_url(
+                        page - 1,
+                        date_from=date_from,
+                        date_to=date_to,
+                        group=group,
+                        query=query,
+                    )
+                    if page > 1
+                    else None
+                ),
+                "next": (
+                    _data_page_url(
+                        page + 1,
+                        date_from=date_from,
+                        date_to=date_to,
+                        group=group,
+                        query=query,
+                    )
+                    if page < pages
+                    else None
+                ),
+                "items": [
+                    {
+                        "number": item_page,
+                        "url": _data_page_url(
+                            item_page,
+                            date_from=date_from,
+                            date_to=date_to,
+                            group=group,
+                            query=query,
+                        ),
+                        "current": item_page == page,
+                    }
+                    for item_page in range(first_page, last_page + 1)
+                ],
+            }
+        else:
+            pagination = {"previous": None, "next": None, "items": []}
+
+        comment_rows = session.execute(
+            select(ProductComment, Product)
+            .outerjoin(
+                Product,
+                (Product.account_id == ProductComment.account_id)
+                & (Product.nm_id == ProductComment.nm_id),
+            )
+            .where(ProductComment.account_id == account.id)
+            .order_by(ProductComment.updated_at.desc())
+        ).all()
+        comments = [
+            {
+                "id": comment.id,
+                "nm_id": comment.nm_id,
+                "comment": comment.comment,
+                "updated_at": comment.updated_at,
+                "product_name": product.name if product else "",
+            }
+            for comment, product in comment_rows
+        ]
+        comments_by_nm = {
+            int(comment["nm_id"]): comment for comment in comments
+        }
         result_rows = session.execute(
             base.order_by(
                 DailyStat.stat_date.desc(),
@@ -625,6 +730,7 @@ def data_page(
                         else 0
                     ),
                     "drr": _safe_percent(stat.spend, stat.revenue),
+                    "comment": comments_by_nm.get(int(stat.nm_id)),
                 }
             )
         products = session.scalars(
@@ -648,9 +754,12 @@ def data_page(
                 "account": account,
                 "rows": rows,
                 "products": products,
+                "comments": comments,
                 "groups": groups,
                 "page": page,
                 "pages": pages,
+                "pagination": pagination,
+                "current_page_url": current_page_url,
                 "total": total,
                 "filters": {
                     "date_from": date_from,
@@ -691,6 +800,57 @@ def update_product_group(
         product.group_is_manual = True
         session.commit()
     return _redirect("/data", "Группа товара обновлена")
+
+
+@router.post("/comments")
+def save_product_comment(
+    request: Request,
+    nm_id: int = Form(...),
+    comment: str = Form(""),
+    return_to: str = Form("/data"),
+):
+    destination = _safe_data_return(return_to)
+    if nm_id <= 0:
+        return _redirect(destination, "Артикул должен быть положительным числом", "error")
+    clean_comment = comment.strip()
+    if len(clean_comment) > 4000:
+        return _redirect(destination, "Комментарий не может быть длиннее 4000 символов", "error")
+
+    with request.app.state.session_factory() as session:
+        account = _owned_account(session, _current_user_id(request))
+        if account is None:
+            return _redirect("/cabinet", "Сначала настройте кабинет", "error")
+        saved_comment = session.scalar(
+            select(ProductComment).where(
+                ProductComment.account_id == account.id,
+                ProductComment.nm_id == nm_id,
+            )
+        )
+        if not clean_comment:
+            if saved_comment is None:
+                return _redirect(
+                    destination,
+                    "Введите текст комментария",
+                    "error",
+                )
+            session.delete(saved_comment)
+            session.commit()
+            return _redirect(destination, f"Комментарий к артикулу {nm_id} удалён")
+
+        if saved_comment is None:
+            saved_comment = ProductComment(
+                account_id=account.id,
+                nm_id=nm_id,
+                comment=clean_comment,
+            )
+            session.add(saved_comment)
+            message = f"Комментарий к артикулу {nm_id} добавлен"
+        else:
+            saved_comment.comment = clean_comment
+            saved_comment.updated_at = utcnow()
+            message = f"Комментарий к артикулу {nm_id} обновлён"
+        session.commit()
+    return _redirect(destination, message)
 
 
 @router.get("/export.xlsx")

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 
 from fastapi.testclient import TestClient
@@ -11,6 +11,7 @@ from app.models import (
     Campaign,
     DailyStat,
     Product,
+    ProductComment,
     SchedulerSetting,
     SyncRun,
     User,
@@ -290,6 +291,9 @@ def test_analytics_report_has_categories_kpis_and_filtered_rankings(
         assert "Футболки · поиск" in response.text
         assert "Конв. корзины" in response.text
         assert "700000002" in response.text
+        assert 'data-funnel-label="Фотообои"' in response.text
+        assert 'data-funnel-label="Футболки"' in response.text
+        assert 'data-funnel-value="orders"' in response.text
 
         response = client.get(
             "/",
@@ -316,6 +320,157 @@ def test_analytics_report_has_categories_kpis_and_filtered_rankings(
         )
         assert response.status_code == 200
         assert "Дата начала не может быть позже даты окончания" in response.text
+
+
+def test_data_pagination_and_product_comments_are_account_scoped(
+    settings,
+    fake_client_factory,
+):
+    app = create_app(settings, fake_client_factory)
+    report_group = "Тест & Данные"
+    start_date = date(2026, 1, 1)
+
+    with TestClient(app) as client:
+        register_user(client)
+        client.post(
+            "/cabinet",
+            data={
+                "name": "Кабинет с комментариями",
+                "token": "valid-token-123456",
+            },
+        )
+        with app.state.session_factory() as session:
+            account = session.scalar(select(Account))
+            session.add(
+                Campaign(
+                    account_id=account.id,
+                    advert_id=99000001,
+                    name="Тест пагинации",
+                )
+            )
+            session.add(
+                Product(
+                    account_id=account.id,
+                    nm_id=880000001,
+                    name="Товар с заметкой",
+                    subject_name="Тест",
+                    report_group=report_group,
+                )
+            )
+            session.add_all(
+                [
+                    DailyStat(
+                        account_id=account.id,
+                        advert_id=99000001,
+                        nm_id=880000001,
+                        stat_date=start_date + timedelta(days=index),
+                        views=index + 1,
+                        clicks=1,
+                        spend=10,
+                        atbs=1,
+                        orders=1,
+                        revenue=100,
+                    )
+                    for index in range(61)
+                ]
+            )
+            session.commit()
+
+        first_page = client.get("/data", params={"group": report_group})
+        assert first_page.status_code == 200
+        assert "Страница 1 из 2" in first_page.text
+        assert "02.03.2026" in first_page.text
+        assert "01.01.2026" not in first_page.text
+        assert "page=2" in first_page.text
+        assert "%26" in first_page.text
+
+        second_page = client.get(
+            "/data",
+            params={"page": 2, "group": report_group},
+        )
+        assert second_page.status_code == 200
+        assert "Страница 2 из 2" in second_page.text
+        assert "01.01.2026" in second_page.text
+        assert "02.03.2026" not in second_page.text
+        assert 'aria-current="page">2' in second_page.text
+
+        response = client.post(
+            "/comments",
+            data={
+                "nm_id": "880000001",
+                "comment": "Проверить ставку после выходных",
+                "return_to": "/data?page=2",
+            },
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Комментарий к артикулу 880000001 добавлен" in response.text
+        assert "Проверить ставку после выходных" in response.text
+
+        response = client.post(
+            "/comments",
+            data={
+                "nm_id": "880000001",
+                "comment": "Ставка проверена, наблюдаем неделю",
+                "return_to": "/data",
+            },
+            follow_redirects=True,
+        )
+        assert "Комментарий к артикулу 880000001 обновлён" in response.text
+        assert "Ставка проверена, наблюдаем неделю" in response.text
+        assert "Проверить ставку после выходных" not in response.text
+
+        response = client.post(
+            "/comments",
+            data={
+                "nm_id": "880000999",
+                "comment": "Артикул ещё не появился в статистике",
+                "return_to": "/data",
+            },
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert "Артикул 880000999" in response.text
+        assert "Артикул ещё не появился в статистике" in response.text
+
+        with app.state.session_factory() as session:
+            owner_comments = session.scalars(
+                select(ProductComment).order_by(ProductComment.nm_id)
+            ).all()
+            assert len(owner_comments) == 2
+            assert owner_comments[0].comment == (
+                "Ставка проверена, наблюдаем неделю"
+            )
+
+        client.post("/logout")
+        register_user(client, "second-owner", "other-password-123")
+        client.post(
+            "/cabinet",
+            data={
+                "name": "Второй кабинет",
+                "token": "second-valid-token-123456",
+            },
+        )
+        response = client.get("/data")
+        assert "Ставка проверена, наблюдаем неделю" not in response.text
+        assert "Артикул ещё не появился в статистике" not in response.text
+
+        client.post(
+            "/comments",
+            data={
+                "nm_id": "880000001",
+                "comment": "Комментарий второго кабинета",
+                "return_to": "/data",
+            },
+        )
+        with app.state.session_factory() as session:
+            saved_comments = session.scalars(
+                select(ProductComment).order_by(ProductComment.id)
+            ).all()
+            assert len(saved_comments) == 3
+            assert saved_comments[-1].comment == (
+                "Комментарий второго кабинета"
+            )
 
 
 def test_failed_manual_run_is_recorded_without_exposing_token(settings):
