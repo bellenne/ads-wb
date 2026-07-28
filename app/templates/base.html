@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>{% block title %}WB РК{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+    <script defer src="{{ url_for('static', path='/app.js') }}"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/">
+          <span class="brand-mark">W</span>
+          <span>
+            <strong>WB РК</strong>
+            <small>центр статистики</small>
+          </span>
+        </a>
+        <nav class="nav">
+          <a class="{{ 'active' if active == 'dashboard' else '' }}" href="/">
+            <span>⌁</span> Обзор
+          </a>
+          <a class="{{ 'active' if active == 'cabinet' else '' }}" href="/cabinet">
+            <span>⌘</span> Кабинет
+          </a>
+          <a class="{{ 'active' if active == 'scheduler' else '' }}" href="/scheduler">
+            <span>◷</span> Автосбор
+          </a>
+          <a class="{{ 'active' if active == 'data' else '' }}" href="/data">
+            <span>▦</span> Все данные
+          </a>
+        </nav>
+        <div class="sidebar-foot">
+          <span class="status-dot"></span>
+          Данные хранятся локально
+          <small>SQLite · Docker volume</small>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button class="menu-button" type="button" aria-label="Открыть меню">☰</button>
+          <div>
+            <span class="eyebrow">Wildberries · Продвижение</span>
+            <strong>{{ account.name if account else 'Кабинет не настроен' }}</strong>
+          </div>
+          <div class="topbar-actions">
+            <span class="user-pill">{{ request.state.username }}</span>
+            <a class="button button-small button-ghost export-button" href="/data">
+              Выгрузить Excel
+            </a>
+            <form method="post" action="/logout">
+              <button class="button button-small button-ghost" type="submit">
+                Выйти
+              </button>
+            </form>
+          </div>
+        </header>
+
+        <div class="content">
+          {% if message %}
+            <div class="flash flash-{{ kind }}" role="status">
+              <span>{{ '✓' if kind != 'error' else '!' }}</span>
+              {{ message }}
+            </div>
+          {% endif %}
+          {% block content %}{% endblock %}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

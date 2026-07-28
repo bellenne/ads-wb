@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>{{ 'Регистрация' if mode == 'register' else 'Вход' }} · WB РК</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  </head>
+  <body class="auth-page">
+    <main class="auth-shell">
+      <section class="auth-brand-panel">
+        <a class="brand auth-brand" href="/">
+          <span class="brand-mark">W</span>
+          <span>
+            <strong>WB РК</strong>
+            <small>центр статистики</small>
+          </span>
+        </a>
+        <div>
+          <span class="eyebrow">Личный доступ</span>
+          <h1>Статистика кабинета остаётся только у его владельца.</h1>
+          <p>
+            Каждый пользователь видит собственный WB-кабинет, историю,
+            расписание и Excel-выгрузки.
+          </p>
+        </div>
+        <small>Пароли защищены scrypt · сессия подписана · ключ WB зашифрован</small>
+      </section>
+
+      <section class="auth-form-panel">
+        <div class="auth-form-wrap">
+          <span class="step-label">
+            {{ 'Новый аккаунт' if mode == 'register' else 'С возвращением' }}
+          </span>
+          <h2>{{ 'Создать аккаунт' if mode == 'register' else 'Войти' }}</h2>
+          <p class="muted">
+            {% if mode == 'register' %}
+              Первый пользователь автоматически получит текущий кабинет и всю накопленную историю.
+            {% else %}
+              Используйте логин и пароль, указанные при регистрации.
+            {% endif %}
+          </p>
+
+          {% if message %}
+            <div class="flash flash-{{ kind }}" role="status">
+              <span>{{ '✓' if kind != 'error' else '!' }}</span>
+              {{ message }}
+            </div>
+          {% endif %}
+
+          <form
+            class="stack-form auth-form"
+            method="post"
+            action="{{ '/register' if mode == 'register' else '/login' }}"
+          >
+            <input type="hidden" name="next" value="{{ next }}">
+            <label>
+              <span>Логин</span>
+              <input
+                name="username"
+                autocomplete="username"
+                minlength="3"
+                maxlength="64"
+                required
+                autofocus
+              >
+              {% if mode == 'register' %}
+                <small>3–64 символа: буквы, цифры, точка, @, +, - или _.</small>
+              {% endif %}
+            </label>
+            <label>
+              <span>Пароль</span>
+              <input
+                type="password"
+                name="password"
+                autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}"
+                minlength="8"
+                maxlength="128"
+                required
+              >
+              {% if mode == 'register' %}
+                <small>Минимум 8 символов.</small>
+              {% endif %}
+            </label>
+            {% if mode == 'register' %}
+              <label>
+                <span>Повторите пароль</span>
+                <input
+                  type="password"
+                  name="password_confirm"
+                  autocomplete="new-password"
+                  minlength="8"
+                  maxlength="128"
+                  required
+                >
+              </label>
+            {% endif %}
+            <button class="button button-primary" type="submit">
+              {{ 'Зарегистрироваться' if mode == 'register' else 'Войти' }}
+            </button>
+          </form>
+
+          <p class="auth-switch">
+            {% if mode == 'register' %}
+              Уже есть аккаунт? <a href="/login">Войти</a>
+            {% else %}
+              Нет аккаунта? <a href="/register">Зарегистрироваться</a>
+            {% endif %}
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
